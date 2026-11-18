@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <queries><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries>
+    <application android:allowBackup="false" android:fullBackupContent="@xml/backup_rules" android:dataExtractionRules="@xml/data_extraction_rules" android:label="@string/app_name" android:icon="@drawable/ic_whale" android:roundIcon="@drawable/ic_whale" android:supportsRtl="true" android:theme="@style/Theme.DeepSeekTTS" android:usesCleartextTraffic="false">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <intent-filter><action android:name="io.github.deepseektts.OPEN_SETTINGS" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity-alias android:name=".EngineSettingsActivity" android:targetActivity=".MainActivity" android:exported="true" />
+        <!-- TTS clients bind directly; BIND_TEXT_SERVICE would block ordinary reader apps. -->
+        <service android:name=".engine.DeepSeekTtsService" android:exported="true" android:label="@string/app_name">
+            <intent-filter><action android:name="android.intent.action.TTS_SERVICE" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+            <meta-data android:name="android.speech.tts" android:resource="@xml/tts_engine" />
+        </service>
+        <activity android:name=".engine.CheckVoiceDataActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter><action android:name="android.speech.tts.engine.CHECK_TTS_DATA" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity android:name=".engine.InstallVoiceDataActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter><action android:name="android.speech.tts.engine.INSTALL_TTS_DATA" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity android:name=".engine.SampleTextActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter><action android:name="android.speech.tts.engine.GET_SAMPLE_TEXT" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+    </application>
+</manifest>
