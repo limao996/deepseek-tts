@@ -15,6 +15,7 @@ class EngineSettingsStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("engine_settings", Context.MODE_PRIVATE)
 
     fun load(): EngineSettings = synchronized(LOCK) {
+        migrateThirdPartyPolicy()
         val encrypted = preferences.getString("credential", null)
         val apiKey = if (encrypted.isNullOrBlank()) "" else try { decrypt(encrypted) }
         catch (_: Exception) { throw SettingsStorageException("无法解密 API Key，请在设置中清除后重新保存。") }
@@ -25,8 +26,14 @@ class EngineSettingsStore(context: Context) {
             speechRate = safeFactor(preferences.getFloat("rate", 1f)),
             pitch = safeFactor(preferences.getFloat("pitch", 1f)),
             dynamicColor = preferences.getBoolean("dynamic_color", false),
-            allowThirdPartyRequests = preferences.getBoolean("allow_third_party_requests", false),
+            allowThirdPartyRequests = preferences.getBoolean("allow_third_party_requests", true),
         )
+    }
+
+    /** 0.1.0 shipped with third-party calls disabled by default; product default is now enabled. */
+    private fun migrateThirdPartyPolicy() {
+        if (preferences.getBoolean("policy_v2", false)) return
+        preferences.edit().putBoolean("allow_third_party_requests", true).putBoolean("policy_v2", true).commit()
     }
 
     fun save(settings: EngineSettings) = synchronized(LOCK) {
@@ -41,26 +48,6 @@ class EngineSettingsStore(context: Context) {
             .putFloat("pitch", safeFactor(settings.pitch))
             .putBoolean("dynamic_color", settings.dynamicColor)
             .putBoolean("allow_third_party_requests", settings.allowThirdPartyRequests).commit()) { "保存失败，请检查设备存储空间" }
-    }
-
-    /** Reserve worst-case billed characters for every attempted cloud request. */
-    fun reserveDailyCharacters(requested: Int, nowMillis: Long = System.currentTimeMillis()): DailyQuota {
-        require(requested > 0) { "字符预留数必须大于零" }
-        return synchronized(LOCK) {
-            val nowDay = Math.floorDiv(nowMillis, MILLIS_PER_DAY)
-            val savedDay = preferences.getLong("usage_day_utc", -1L)
-            // Do not reset usage if the wall clock moves backwards.
-            val usageDay = maxOf(savedDay, nowDay)
-            val savedUsed = if (savedDay == usageDay) preferences.getInt("usage_characters", 0) else 0
-            if (requested > DAILY_CHARACTER_LIMIT - savedUsed) {
-                return@synchronized DailyQuota(false, savedUsed, DAILY_CHARACTER_LIMIT - savedUsed)
-            }
-            val nextUsed = savedUsed + requested
-            check(preferences.edit().putLong("usage_day_utc", usageDay).putInt("usage_characters", nextUsed).commit()) {
-                "无法更新本机用量上限，请稍后重试"
-            }
-            DailyQuota(true, nextUsed, DAILY_CHARACTER_LIMIT - nextUsed)
-        }
     }
 
     private fun key(): SecretKey {
@@ -90,12 +77,9 @@ class EngineSettingsStore(context: Context) {
 
     private fun safeFactor(value: Float) = if (value.isFinite()) value.coerceIn(0.5f, 2f) else 1f
     companion object {
-        const val DAILY_CHARACTER_LIMIT = 10_000
-        private const val MILLIS_PER_DAY = 86_400_000L
         private const val ALIAS = "deepseek_tts_api_key_v1"
         private val LOCK = Any()
     }
 }
 
-data class DailyQuota(val allowed: Boolean, val used: Int, val remaining: Int)
 class SettingsStorageException(message: String) : IllegalStateException(message)

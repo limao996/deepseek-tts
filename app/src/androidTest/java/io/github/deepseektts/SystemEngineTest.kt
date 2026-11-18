@@ -23,7 +23,7 @@ class SystemEngineTest {
   val initialized=CountDownLatch(1);val initialization=AtomicInteger(-99)
   var tts:TextToSpeech?=null
   try {
-   store.save(original.copy(apiKey="intentionally-invalid-system-key", allowThirdPartyRequests=false))
+   store.save(original.copy(apiKey="intentionally-invalid-system-key", allowThirdPartyRequests=true))
    instrumentation.runOnMainSync { tts=TextToSpeech(context,{code->initialization.set(code);initialized.countDown()},context.packageName) }
    assertTrue("TTS initialization timed out",initialized.await(15,TimeUnit.SECONDS));assertEquals(TextToSpeech.SUCCESS,initialization.get())
    val engine=tts!!

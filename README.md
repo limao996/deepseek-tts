@@ -1,65 +1,206 @@
-# 鲸语 TTS · DeepSeek Android Engine
+<div align="center">
 
-Jetpack Compose + Material 3 Expressive 的 Android 系统文字转语音引擎。蓝灰底色、圆润卡片、海蓝强调；不是只在应用里播放的 Demo，而是实现 Android TextToSpeechService 的可选择引擎。
+<img src="docs/screenshots/home-light.png" width="88" alt="鲸语 TTS" />
+
+# 鲸语 TTS
+
+Android 系统文字转语音引擎，通过 DeepSeek 官方接口流式合成语音。
+
+[![Release](https://img.shields.io/github/v/release/limao996/deepseek-tts?style=flat-square&color=376C94)](https://github.com/limao996/deepseek-tts/releases)
+[![Downloads](https://img.shields.io/github/downloads/limao996/deepseek-tts/total?style=flat-square&color=376C94)](https://github.com/limao996/deepseek-tts/releases)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#快速开始)
+[![License](https://img.shields.io/github/license/limao996/deepseek-tts?style=flat-square&color=blue)](LICENSE)
+[![爱发电](https://img.shields.io/badge/爱发电-赞助支持-946CE6?style=flat-square)](https://afdian.com/a/limao996)
+
+[下载安装](#快速开始) · [界面预览](#界面预览) · [常见问题](#常见问题) · [隐私说明](docs/PRIVACY.md) · [验证说明](docs/VERIFICATION.md)
+
+</div>
+
+鲸语 TTS 实现 Android 的 `TextToSpeechService`，安装后可在系统「文字转语音输出」中设为首选引擎，由支持系统 TTS 的阅读器、听书应用和无障碍功能直接调用。朗读文本通过 DeepSeek 官方 WebSocket 接口流式合成，音频以 24 kHz PCM 边接收边播放，不必等整段合成完毕才开始出声。
+
+## 赞助
+
+本项目由个人维护。赞助用于覆盖开发、测试设备与签名证书等成本，不会解锁额外功能，也不影响任何已有功能。
+
+[![爱发电](https://img.shields.io/badge/爱发电-赞助支持-946CE6?style=flat-square)](https://afdian.com/a/limao996)
+
+赞助入口同样位于应用「设置 → 赞助与支持」。赞助不会解锁功能，也不会改变朗读结果。
+
+## 界面预览
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/home-light.png" width="228" /><br/><sub>首页 · 引擎状态</sub></td>
+<td align="center"><img src="docs/screenshots/home-preview.png" width="228" /><br/><sub>试听 · 计费字符提示</sub></td>
+<td align="center"><img src="docs/screenshots/settings-light.png" width="228" /><br/><sub>设置 · 密钥与声音</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/usage-page.png" width="228" /><br/><sub>用量与费用 · 热力图</sub></td>
+<td align="center"><img src="docs/screenshots/settings-footer.png" width="228" /><br/><sub>设置 · 更新与赞助</sub></td>
+<td align="center"><img src="docs/screenshots/home-dark.png" width="228" /><br/><sub>深色模式</sub></td>
+</tr>
+</table>
+<sub>截图取自 Android 14 模拟器，界面随系统深浅色自动切换。</sub>
+</div>
 
 ## 功能
-- DeepSeek 官方 WebSocket 流式合成，Stella（海星）/ Tide（暗潮）两种音色。
-- 24 kHz / PCM 16-bit / mono 音频边接收边交给 Android 系统播放。
-- 本地 Media3 Sonic 语速/音调处理（0.5–2 倍），不伪造服务端不支持的参数。
-- 10种语言的联网 Voice 声明；实际语言由 DeepSeek 根据文本识别。
-- API Key 设备内 Android Keystore AES-GCM 加密；应用声明禁用备份，不写日志、不缓存朗读文本/音频。部分 Android 厂商的设备迁移可能不遵循禁用备份设置，复制出去的密文依赖原设备密钥，新设备需重新配置。
-- 试听通过本包系统 TTS 服务，支持停止、超时、错误与服务端中断处理，不自动重试或续传。
 
-## 构建
-要求 JDK 17、Android SDK Platform 36、Build Tools 35.0.0（AGP会按需选择），网络可访问 Google/Maven Central。固定 AGP 8.13.2、Kotlin 2.2.21、Gradle Wrapper 8.13。Material3 使用 1.5.0-alpha08 以启用公开 Expressive API（1.4.0 的对应主题为内部 API）；升级时需复验该实验 API。
+| 能力 | 说明 |
+| :-- | :-- |
+| 系统 TTS 引擎 | 实现 `TextToSpeechService`，可被系统及其他应用绑定调用，而非只在应用内播放。 |
+| 流式合成 | 通过 DeepSeek 官方 WebSocket 接收 24 kHz PCM 音频，收到即交给系统播放。 |
+| 音色 | 提供 stella（女声）与 tide（男声）两种音色，切换后立即生效。 |
+| 语速与音调 | 本地使用 Media3 Sonic 处理，范围 0.5–2.0 倍，不伪造服务端不支持的参数。设置中的值同时作为第三方应用调用时的基准：调用方未指定语速时使用此值，指定时按倍数叠加。 |
+| 多语言 | 声明 10 种联网 Voice；实际语种由 DeepSeek 根据文本自动识别。 |
+| 密钥保护 | API Key 经 Android Keystore AES-GCM 加密保存，界面不回显，备份与迁移排除该文件。 |
+| 第三方调用 | 默认允许其他应用调用，可在设置中关闭。应用不限制朗读次数或每日用量。 |
+| 用量与费用 | 统计今日、近 7 天、近 30 天与累计用量，并以热力图展示最近约 6 个月每日朗读量。 |
+| 更新检查 | 优先解析 GitHub 发布页跳转，必要时调用 API；结果做缓存，避免触发限流。 |
+| 朗读行为 | 断流或超时后不自动重播，不会产生重复请求与重复计费。 |
+| 界面 | Material 3 Expressive，支持深色模式与动态取色。 |
 
-Windows:
+## 快速开始
 
+**1. 安装**
+
+从 [Releases](https://github.com/limao996/deepseek-tts/releases/latest) 下载 APK。要求 Android 8.0 或更高版本；安装时可能需要允许安装未知来源应用。
+
+**2. 配置 API Key**
+
+打开「鲸语 TTS → 设置」，粘贴 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后点击「保存设置」。Key 仅保存在本机并加密存储，不会上传到其他服务器。
+
+**3. 设为系统引擎**
+
+在首页点击「系统文字转语音设置」，或在系统设置中搜索「文字转语音输出」，将首选引擎设为「鲸语 TTS」。部分厂商将该入口放在「无障碍 → 文字转语音输出」。应用不会也无法静默修改系统默认引擎。
+
+**4. 第三方调用**
+
+阅读器、听书等应用调用系统 TTS 时，文本会发送至 DeepSeek 并使用你保存的 API Key 计费。该能力默认开启；若只打算使用应用内试听，可在设置中关闭「允许其他应用调用系统引擎」。
+
+## 用量与费用
+
+设置页的「用量与费用」按计费字符统计今日、近 7 天、近 30 天和累计用量，并用周一对齐的 7 行热力图展示最近约 6 个月的每日朗读量。每格带日期与字符数的无障碍描述，五档颜色按统计窗口内的单日最大值分级。
+
+DeepSeek 官方 TTS 刊例价为 ¥3 / 万字符，限时 5 折为 ¥1.5 / 万字符。界面按限时价估算，并注明以 DeepSeek 账单为准。
+
+本地只记录日期、计费字符数与请求次数，不保存朗读文本、音频或请求日志。统计仅在服务确认合成成功后写入，失败或中断的请求不会计入；可随时清除本地统计，不影响账单。
+
+应用不设每日用量上限；如需控制支出，请在 DeepSeek 控制台为 API Key 设置额度。
+
+## 官方接口
+
+应用仅连接 DeepSeek 官方接口 `wss://api.deepseek.com/v1/tools/tts`。代码中没有可替换的 base URL，也不支持中转站、镜像站或第三方兼容端点；建立连接前会校验目标地址，非官方域名会被拒绝（本地回环仅用于自动化测试）。请使用 DeepSeek 官方控制台签发的 API Key；使用中转或共享 Key 不在本项目管理范围内，语音质量、计费与隐私均无法保证。
+
+本项目与 DeepSeek 无隶属关系，使用时需遵守 DeepSeek 服务条款。
+
+## 隐私与安全
+
+- API Key 由 Android Keystore AES-GCM 加密后存放在应用私有存储中，界面不回显已保存的密钥。
+- 朗读文本与合成音频不写入本地，音频流直接交给系统播放。
+- 用量统计仅记录日期、字符数与请求次数。
+- Android 12+ 云备份与设备迁移规则显式排除密钥文件。
+- 应用不含自建服务端、遥测与广告；外部链接均由用户主动点击。
+- 设置页可清除 API Key、关闭第三方调用或清除本地统计；卸载后 Keystore 中的密钥不可用。
+
+完整说明见[隐私说明](docs/PRIVACY.md)。
+
+## 检查更新
+
+设置页「关于与更新」支持自动与手动检查。实现先请求 `github.com/<repo>/releases/latest`，从 HTTP 302 的 `Location` 解析版本号；仅在取不到版本时才调用 GitHub API 兜底，并附带 `User-Agent`。结果缓存 6 小时，手动检查 30 秒内复用；收到 403/429 后冷却 30 分钟，期间提示用户手动打开仓库。检查更新只提示版本，不在应用内下载或安装。
+
+## 技术架构
+
+```text
+阅读器 / 听书应用 / 无障碍
+        │  speak()（系统 TTS 绑定）
+        ▼
+DeepSeekTtsService（TextToSpeechService）
+        │  onSynthesizeText  ← 系统合成线程
+        ▼
+DeepSeekStreamSession（OkHttp WebSocket，有界队列 + 可取消背压）
+        │  24 kHz / PCM 16-bit / 单声道二进制帧
+        ▼
+PcmFramer（跨帧采样对齐）→ PcmProcessor（Media3 Sonic 变速变调）
+        │  SynthesisCallback.start / audioAvailable / done
+        ▼
+Android 系统音频输出
+```
+
+```text
+app/src/main/java/io/github/deepseektts
+├── data/      设置模型与 Keystore 加密存储
+├── network/   官方消息协议、流式会话、取消与错误映射
+├── audio/     PCM 采样对齐、Sonic 变速变调
+├── billing/   计价与本地用量统计
+├── update/    版本检查与缓存策略
+├── engine/    系统 TTS 服务、Voice 目录、访问策略、平台 Activity
+├── ui/        Compose 主题、组件、ViewModel
+└── MainActivity.kt  首页 / 设置 / 试听 / 用量
+```
+
+只有收到服务端 `finish`/`success` 才算合成成功，提前断流按失败处理。发出 `finish_text` 后不再以短超时判断首帧，遵循协议给出的 60 秒无文本上限与 30 分钟会话上限。
+
+## 本地构建
+
+需要 JDK 17、Android SDK Platform 36，以及可访问 Google Maven 与 Maven Central 的网络。
+
+```bash
+# Windows
 gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 
-macOS/Linux:
+# macOS / Linux
+./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
 
-bash gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+调试 APK 输出于 `app/build/outputs/apk/debug/app-debug.apk`，也可直接用 Android Studio 打开项目。
 
-Windows 若项目路径包含中文，AGP/JVM 测试可能无法加载测试类；将工程放在纯英文路径后重试测试。本次验证也使用临时盘符映射，不修改源码位置。
+## 验证情况
 
-发布版 APK 与校验值见 GitHub Releases：https://github.com/limao996/deepseek-tts/releases 。本地构建调试 APK 位于 app/build/outputs/apk/debug/app-debug.apk。Android Studio 可直接打开项目；SDK 路径通过 ANDROID_HOME 或本地 local.properties 配置，不提交个人路径。发布版需要自行配置签名。
+| 项目 | 结果 |
+| :-- | :-- |
+| JVM 单元测试 | 62 项通过 |
+| Android 设备测试 | 15 项，其中 2 项真实网络测试默认跳过 |
+| lint | 0 error，21 warning |
 
-## 使用
-1. 安装调试 APK（最低 Android 8.0 / API 26）。
-2. 打开「鲸语 TTS → 设置」，录入自己的 DeepSeek API Key 并保存。不要把密钥写到源码或发到聊天里。
-3. 首页输入文字，选择音色并试听。文本将发送至 DeepSeek 云端，需联网且可能产生 API 费用；未保存 Key 不会调用合成。
-4. 通过「系统 TTS 设置」进入系统设置，将「鲸语 TTS」选为首选引擎。应用不能静默修改系统首选引擎。不同厂商入口可能位于无障碍/语言与输入法的文字转语音输出设置中。
-5. 阅读器等遵循系统 TTS 的应用即可调用；强制自有音频引擎的应用不受该设置控制。
+环境、覆盖范围与未验证事项见[验证说明](docs/VERIFICATION.md)。尚未在真机、Android 8 实机、TalkBack、200% 字体与横屏环境下验证。
 
-## 约束与隐私
-- 只连官方 wss://api.deepseek.com/v1/tools/tts。没有自建代理、离线模型或遥测。
-- 单会话最多 10,000 计费字符、64 KiB，中文汉字按2计；Android 客户端本身通常将单次文本限制在4,000字符，长文由调用方分段。
-- WebSocket 必须返回 finish/success 才视为成功；输入尚未结束时遵守 DeepSeek 60 秒 idle limit，单次会话最长 30 分钟。发送 finish_text 后不设置未经协议支持的短首帧超时。中断不自动重播，以免重复内容与计费。
-- 应用中的首包指标是本次引擎从开始到收到第一批音频的耗时，不是首个声音真正播出的延迟。
-- 系统请求的语速/音调由引擎本地处理；应用滑块用于自身试听，其他调用方的参数各自有效。DeepSeek本身不提供语速控制。
-- 密钥加密防止磁盘明文泄露，但应用内存、root设备等不在此保护边界内；可以在设置中清除。
-- 系统 TTS 引擎默认关闭第三方应用调用。设置页会明确提示：允许后，其他应用可将文本发送至 DeepSeek，费用计入此 API Key；必须由用户确认并保存后才生效。已启用时，本机按 UTC 日最多预留 10,000 个计费字符（不是金额上限，也不能抵御 root/重装绕过），请只在可信设备使用低额度/预算 Key。
-- 当前未实现系统 rangeStart 逐字高亮、缓存、导出、后台播放器和断点续传。
+## 常见问题
 
-## 验证
-- JVM: TtsProtocolTest / PcmFramerTest / DeepSeekStreamSessionTest / PcmProcessorTest，覆盖序列化/限长、半采样边界、首帧先于完成、完成前数据排空、鉴权/中断/超时/取消、变速输出。
-- 设备: gradlew.bat :app:connectedDebugAndroidTest，包含 Keystore 保存清除、PCM本地处理、普通系统TTS客户端绑定与无密钥错误。
-- 手动: 首次配置、错误Key、断网、长文、按停止后立刻再朗读、切换系统默认引擎、深色/大字体/横竖屏。API Key 不随工程提供，真实云端合成需自行配置验证。
+<details>
+<summary>提示「第三方系统引擎调用已关闭」怎么办？</summary>
 
-实际执行结果在 docs/VERIFICATION.md；未执行不得当作通过。
+在设置中开启「允许其他应用调用系统引擎」。鲸语自身的试听不受该开关影响。
+</details>
 
-## 实现结构
-- data/：设置与加密密钥，唯一持久化入口。
-- network/：官方消息协议、有界PCM队列与取消/终止状态。
-- audio/：16bit跨帧对齐与Media3 Sonic。
-- engine/：Android系统服务、语言/音色与平台数据检查Activity。
-- ui/：Compose界面和自身试听生命周期。
+<details>
+<summary>朗读失败并提示检查 API Key</summary>
 
-## 官方参考
-- https://api-docs.deepseek.com/guides/tts/
-- https://developer.android.com/reference/android/speech/tts/TextToSpeechService
-- https://developer.android.com/reference/android/speech/tts/SynthesisCallback
-- https://developer.android.com/develop/ui/compose/designsystems/material3
+确认 Key 有效、账户余额可用，且设备能访问 `api.deepseek.com`。错误提示会区分鉴权、限流、网络与超时。
+</details>
 
-界面中的插图由代码绘制；未将用户提供的角色图片打包进应用。
+<details>
+<summary>系统设置里找不到「鲸语 TTS」</summary>
+
+确认应用已安装并至少启动过一次；部分厂商将入口放在「无障碍 → 文字转语音输出」。
+</details>
+
+<details>
+<summary>长文会被截断吗</summary>
+
+单次请求上限由 DeepSeek 定义：10,000 计费字符（中文按 2 计，英文按 1 计）与 64 KiB。应用直接使用这一上限；Android 的 `TextToSpeech.speak()` 每次最多接受 4,000 字符，因此长文会在本地按句子边界切分后排队朗读，不会因超过 4,000 字符而失败。长文仍建议由调用方分段提交，应用内试听会实时显示计费字符数。这是单次请求限制，不是每日额度。
+</details>
+
+<details>
+<summary>会重复朗读或重复计费吗</summary>
+
+断流、超时与鉴权失败都不会自动重播，只有用户或调用方重新发起请求时才会产生新请求。
+</details>
+
+## 许可证
+
+[MIT License](LICENSE) © 2026 limao996
+
+---
+
+<div align="center"><sub>本项目与 DeepSeek 无隶属关系，使用需遵守 DeepSeek 服务条款。</sub></div>

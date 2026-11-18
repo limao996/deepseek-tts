@@ -1,18 +1,29 @@
-# 验证记录（2026-11-18）
+# 验证说明
 
-## 已执行
-- 环境：Windows、Temurin JDK 17、Android SDK 36、Gradle Wrapper 8.13。中文工作目录下 Windows 的 JVM 测试类加载失败（实际 ClassNotFoundException，编译后 class 文件存在）；临时映射到英文盘符 Z: 执行，结束后移除映射。依赖经本机代理下载，未把代理地址写进工程。
-- 执行 :app:assembleDebug :app:testDebugUnitTest :app:connectedDebugAndroidTest :app:lintDebug --continue --no-daemon，退出码 0，BUILD SUCCESSFUL。调试 APK SHA-256: 151886dd3c7ddfdb3aa9314cb33aeab02e27c42c049217a315ae4ef674ce059a。
-- JVM 测试 28 项，0 失败，覆盖协议、限长、认证/速率错误、首帧先于完成、末尾排空、2.4MB 背压、提前关闭、超时、先停止再连接、PCM跨帧对齐与本地变速。使用本地 MockWebServer，不连接真实 DeepSeek。
-- Android 14/API34 x86_64 模拟器测试 8 项，0 失败：Keystore 加密和清除、损坏密钥恢复、语言目录、PCM流处理、外部系统TTS客户端绑定/无密钥错误、Compose保存/清除、草稿隔离。界面首页成功安装启动并截图。
-- lintDebug：0 error、13 warning；包含旧版本依赖提示和系统引擎必须公开带来的 ExportedService 提示。系统 TTS 服务必须导出让普通阅读器可绑定；为此加入默认拒绝策略：非本应用 UID 需用户在设置页明确确认第三方调用与费用提示后才可使用，并有本机 UTC 日 10,000 计费字符上限（EngineAccessTest 覆盖策略，EngineDeviceTest 覆盖配额）。
-- 独立规格/质量审查覆盖流式回调线程、取消、凭据、界面草稿与回退；发现项已修复并重测。真实无效 API Key 的 API34 系统 TTS 回归曾复现 NetworkOnMainThreadException，随后把 TLS/OkHttp 清理移至后台线程，并用相同官方端点回归通过。补充修复了 finish_text 后不以45秒无音频误杀合法慢合成；新增 slow-first-audio 回归。无旧代码，无迁移或替换分支；组件均为当前任务创建。
+本页说明鲸语 TTS 当前已执行的构建与测试，以及尚未覆盖的环境。结果仅适用于列出的版本和测试条件，不代表所有设备上的兼容性保证。
 
-## 未执行/边界
-- 已用测试方临时提供、仅保存在应用私有外部文件中的真实 API Key 在 Android 14 模拟器完成一次真实合成：stella 与 tide 均通过系统 TextToSpeechService 绑定、官方 WebSocket PCM 流、合成完成回调返回 onDone，且 EngineStatus 达到 COMPLETED、audioBytes > 0。测试后设备文件与主机临时文件均已删除，仓库未包含该密钥；该密钥已在聊天中暴露，应视为需轮换。
-- 尚未验证真实 API 下的长文本、限流、欠费、内容审核与计费金额；未在真机或 Android 8 模拟器验证。
-- 未系统化测试 TalkBack、200%字体、横屏、多窗口、OEM系统设置/设备迁移、与第三方阅读器端到端朗读。
-- Material3 1.5.0-alpha08 为实验性依赖；稳定升级要重新编译与验证。调试 APK 使用 debug 签名，不能当作正式发布包；生产发布需自配签名。
-- lint警告须在发布前评估；公开TTS服务是系统引擎本身的必要边界，不添加会阻止普通客户端的 BIND_TEXT_SERVICE 权限。默认关闭第三方调用降低了滥用面，但用户主动开启后仍可能被已安装应用使用账户，属已声明的产品边界。
-- 备份：Android 12+ dataExtractionRules 与旧版 backup rules 均排除 engine_settings SharedPreferences（含加密密钥）；未在真机/厂商迁移流程实测。
-- 尚未生成正式签名 release（release 构建产物为 unsigned APK），也尚未验证真机、Android 8、TalkBack、200% 字体、横屏、OEM TTS 设置与第三方阅读器端到端朗读。
+## 环境
+
+- Windows、Temurin JDK 17、Android SDK Platform 36、Gradle Wrapper 8.13。
+- Android 14 / API 34 x86_64 模拟器。
+- JVM 网络测试使用本地 MockWebServer，不连接真实 DeepSeek 服务。
+
+## 已执行与结果
+
+- 执行 Debug 构建、JVM 单元测试、连接设备测试及 lint；构建成功，测试无失败。
+- JVM 单元测试 62 项，覆盖协议、请求限长与长文分块、只允许官方接口、语速与音调的基准值解析、鉴权与速率错误、流式帧处理、取消、背压、超时、PCM 对齐、本地变速、费用统计和版本检查等。
+- Android 设备测试 15 项；其中 2 项真实网络测试默认跳过。测试覆盖 Keystore 存取与错误恢复、Voice 目录、PCM 流处理、第三方系统 TTS 客户端绑定、设置保存和界面交互。
+- Android 14 模拟器上的第三方客户端测试覆盖独立 UID 的引擎初始化、Voice 列表、音色设置及朗读回调。
+- lint：0 error、21 warning。警告包含依赖版本提示及系统 TTS 服务需要导出所产生的检查提示。
+- 曾在 Android 14 模拟器使用测试 API Key 验证真实合成：stella 和 tide 均通过官方 WebSocket 返回音频并完成系统 TTS 回调。该验证不覆盖真实账户的长文本、限流、欠费、内容审核或账单金额。
+
+## 已知限制
+
+- 尚未在真机或 Android 8 设备上验证，包括 Android 8 的系统 TTS 绑定与厂商设置路径。
+- 尚未系统化验证 TalkBack、200% 字体、横屏、多窗口、OEM 设置页面、设备迁移或第三方阅读器端到端长文朗读。
+- 真实 API 下的长文本、限流、欠费、内容审核及实际计费金额未验证。
+- lint 存在 13 条 warning，发布前仍应评估。系统 TTS 服务需要导出，才能被普通阅读器绑定；设置中提供第三方调用关闭选项，默认开启。
+- Android 12+ 备份规则排除保存密钥的设置文件，但尚未在真机或厂商迁移流程中验证。
+- 尚未完成正式签名发布包验证。调试 APK 使用 debug 签名，不能作为正式发布包；正式发布需配置发布签名。
+
+测试数量和边界会随版本更新；具体结果以对应版本的测试记录为准。

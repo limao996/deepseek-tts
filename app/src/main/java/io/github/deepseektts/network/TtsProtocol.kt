@@ -28,6 +28,45 @@ object TtsProtocol {
         return total
     }
 
+    /**
+     * Splits text so it can be passed to [android.speech.tts.TextToSpeech.speak], which accepts
+     * at most [android.speech.tts.TextToSpeech.getMaxSpeechInputLength] characters per call
+     * (4,000 on Android). The engine itself accepts the official limit of 10,000 billed
+     * characters and 64 KiB per request, so chunking keeps that full range usable.
+     *
+     * Splits on sentence punctuation when possible and never breaks a surrogate pair.
+     */
+    fun chunkForPlayback(text: String, maxChars: Int): List<String> {
+        require(maxChars >= 2) { "分块长度至少为 2" }
+        if (text.length <= maxChars) return listOf(text)
+        val chunks = ArrayList<String>()
+        var start = 0
+        while (start < text.length) {
+            if (text.length - start <= maxChars) {
+                chunks += text.substring(start).trim()
+                break
+            }
+            var end = start + maxChars
+            if (Character.isHighSurrogate(text[end - 1])) end -= 1
+            val boundary = lastSentenceBoundary(text, start, end)
+            val cut = if (boundary > start) boundary else end
+            val piece = text.substring(start, cut).trim()
+            if (piece.isNotEmpty()) chunks += piece
+            start = cut
+            while (start < text.length && text[start].isWhitespace()) start += 1
+        }
+        return chunks.filter { it.isNotEmpty() }
+    }
+
+    private fun lastSentenceBoundary(text: String, start: Int, end: Int): Int {
+        for (i in end - 1 downTo start) {
+            if (text[i] in SENTENCE_ENDINGS) return i + 1
+        }
+        return start
+    }
+
+    private const val SENTENCE_ENDINGS = "。！？!?；;\n"
+
     fun parseFinish(message: String): Finish {
         val obj = JsonParser.parseString(message).asJsonObject
         require(obj.get("event")?.asString == "finish") { "服务端返回了未知事件" }

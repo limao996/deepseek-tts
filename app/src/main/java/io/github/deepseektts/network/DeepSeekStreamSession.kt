@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Listener only enqueues bytes. Consumers own audio callbacks and the synthesis thread. */
 class DeepSeekStreamSession(
     private val client: OkHttpClient,
-    private val endpoint: String = "wss://api.deepseek.com/v1/tools/tts",
+    private val endpoint: String = OFFICIAL_ENDPOINT,
     private val idleTimeoutMs: Long = TimeUnit.SECONDS.toMillis(60),
     private val maxSessionMs: Long = TimeUnit.MINUTES.toMillis(30),
 ) {
@@ -27,6 +27,17 @@ class DeepSeekStreamSession(
     private val queue = ArrayBlockingQueue<ByteArray>(96)
     private val terminal = AtomicReference<Event?>(null)
     private val socket = AtomicReference<WebSocket?>(null)
+    // This project only supports the official DeepSeek API. Local loopback is allowed
+    // for tests; any other host is rejected so a relay or third-party endpoint cannot
+    // be swapped in by configuration.
+    init {
+        require(
+            endpoint == OFFICIAL_ENDPOINT ||
+                endpoint.startsWith("http://127.0.0.1") ||
+                endpoint.startsWith("http://localhost") ||
+                endpoint.startsWith("http://[::1]"),
+        ) { "Only the official DeepSeek endpoint is supported" }
+    }
     private val lock = Any()
     @Volatile private var lastActivity = System.nanoTime()
     @Volatile private var textFinished = false
@@ -134,6 +145,8 @@ class DeepSeekStreamSession(
                 TimeUnit.NANOSECONDS.toMillis(now - started) >= maxSessionMs) fail(Reason.TIMEOUT)
         }
     }
+
+    companion object { const val OFFICIAL_ENDPOINT = "wss://api.deepseek.com/v1/tools/tts" }
 
     fun cancel() {
         synchronized(lock) { terminal.set(Event.Cancelled); queue.clear() }

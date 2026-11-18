@@ -5,7 +5,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.deepseektts.data.EngineSettings
 import io.github.deepseektts.data.EngineSettingsStore
+import io.github.deepseektts.BuildConfig
 import io.github.deepseektts.data.SettingsStorageException
+import io.github.deepseektts.update.AppLinks
+import io.github.deepseektts.update.SharedPreferencesUpdateState
+import io.github.deepseektts.update.UpdateChecker
+import io.github.deepseektts.update.UpdateResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,6 +24,10 @@ data class SettingsUiState(
     val storageRecoveryRequired: Boolean = false,
     val dirty: Boolean = false,
     val feedback: UiFeedback? = null,
+    val updateMessage: String? = null,
+    val updateBusy: Boolean = false,
+    val updateUrl: String? = null,
+    val usage: io.github.deepseektts.billing.UsageSnapshot? = null,
 )
 
 data class UiFeedback(val id: Long, val message: String, val isError: Boolean, val clearKeyInput: Boolean = false)
@@ -30,6 +39,10 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
     private var cachedApiKey: String? = null
     private var savedSnapshot = EngineSettings()
     private var nextFeedbackId = 0L
+    private val updateState = SharedPreferencesUpdateState(application.applicationContext)
+    private val updateChecker = UpdateChecker(okHttpClient(), updateState, BuildConfig.VERSION_NAME)
+    private var lastAutomaticCheckMs = 0L
+    private val usageRecorder = io.github.deepseektts.billing.UsageRecorder(application.applicationContext)
 
     init {
         viewModelScope.launch {
@@ -61,7 +74,8 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun update(transform: (EngineSettings) -> EngineSettings) {
         val current = mutableState.value
-        if (!current.loaded || current.saving) return
+        // Draft edits stay allowed while a save is in flight; the pending write converges afterwards.
+        if (!current.loaded) return
         val draft = transform(current.settings).copy(apiKey = "")
         mutableState.value = current.copy(settings = draft, dirty = draft != savedSnapshot, feedback = null)
     }
@@ -93,6 +107,13 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
         persist(current.settings, key, draft = current.settings, clearInput = keyInput.isNotBlank(), message = if (keyInput.isNotBlank()) "API Key 已安全保存，原文不会显示。" else "设置已保存。")
     }
 
+    /** Non-secret controls save as soon as the user commits a change. */
+    fun persistDrafts() {
+        val current = mutableState.value
+        if (!current.loaded || current.saving || current.storageRecoveryRequired) return
+        persist(current.settings, cachedApiKey.orEmpty(), draft = current.settings, clearInput = false, message = "", provideFeedback = false)
+    }
+
     fun clearKey() {
         val current = mutableState.value
         if (!current.loaded || current.saving) return
@@ -100,11 +121,67 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
         persist(savedSnapshot, "", draft = current.settings, clearInput = true, message = "API Key 已清除；需要重新保存后才能试听或合成。")
     }
 
+    /** One automatic check per process; the checker itself caches for 6 hours on disk. */
+    fun checkForUpdatesOnStart() {
+        if (lastAutomaticCheckMs != 0L) return
+        lastAutomaticCheckMs = System.currentTimeMillis()
+        runUpdateCheck(manual = false)
+    }
+
+    fun checkForUpdatesManually() = runUpdateCheck(manual = true)
+
+    private fun runUpdateCheck(manual: Boolean) {
+        val current = mutableState.value
+        if (current.updateBusy) return
+        mutableState.value = current.copy(updateBusy = true, updateMessage = mutableState.value.updateMessage)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { updateChecker.check(manual) }.getOrElse { UpdateResult.Failed("更新检查失败，请稍后重试。") } }
+            val message: String
+            var url: String? = mutableState.value.updateUrl
+            when (result) {
+                is UpdateResult.Available -> {
+                    message = "发现新版本 " + result.latest + "（当前 " + result.current + "）。"
+                    url = result.releaseUrl
+                }
+                is UpdateResult.UpToDate -> {
+                    message = if (manual) "已是最新版本 " + result.current + "。" else "当前为最新版本。"
+                }
+                is UpdateResult.RateLimited -> {
+                    val minutes = (result.retryAfterMs / 60_000L).coerceAtLeast(1L)
+                    message = "GitHub 访问受限，已暂停自动检查约 " + minutes + " 分钟；可稍后打开仓库手动查看。"
+                    url = AppLinks.RELEASES
+                }
+                is UpdateResult.Failed -> {
+                    message = result.message
+                }
+            }
+            mutableState.value = mutableState.value.copy(updateBusy = false, updateMessage = message, updateUrl = url)
+        }
+    }
+
+    /** Reloads locally recorded usage; called when the UI becomes visible. */
+    fun refreshUsage() {
+        viewModelScope.launch {
+            val snapshot = withContext(Dispatchers.IO) { runCatching { usageRecorder.snapshot() }.getOrNull() } ?: return@launch
+            mutableState.value = mutableState.value.copy(usage = snapshot)
+        }
+    }
+
+    fun clearUsageHistory() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val prefs = getApplication<Application>().getSharedPreferences("usage_history", android.content.Context.MODE_PRIVATE)
+                prefs.edit().clear().commit()
+            }
+            refreshUsage()
+        }
+    }
+
     fun dismissFeedback() {
         mutableState.value = mutableState.value.copy(feedback = null)
     }
 
-    private fun persist(settings: EngineSettings, apiKey: String, draft: EngineSettings, clearInput: Boolean, message: String) {
+    private fun persist(settings: EngineSettings, apiKey: String, draft: EngineSettings, clearInput: Boolean, message: String, provideFeedback: Boolean = true) {
         val current = mutableState.value
         if (current.saving) return
         val safeDraft = draft.copy(apiKey = "")
@@ -122,8 +199,10 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
                 mutableState.value = mutableState.value.copy(
                     settings = retainedDraft, saving = false, savedKeyAvailable = apiKey.isNotBlank(),
                     storageRecoveryRequired = false, dirty = retainedDraft != savedSnapshot,
-                    feedback = notice(message, isError = false, clearKeyInput = clearInput),
+                    feedback = if (provideFeedback) notice(message, isError = false, clearKeyInput = clearInput) else mutableState.value.feedback,
                 )
+                // Edits made during the write are persisted by the next autosave round.
+                if (mutableState.value.settings != savedSnapshot) persistDrafts()
             } else {
                 mutableState.value = mutableState.value.copy(saving = false, feedback = notice(result, isError = true))
             }
@@ -132,6 +211,10 @@ class TtsUiViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun notice(message: String, isError: Boolean, clearKeyInput: Boolean = false) =
         UiFeedback(++nextFeedbackId, message, isError, clearKeyInput)
+
+    private fun okHttpClient() = okhttp3.OkHttpClient.Builder()
+        .retryOnConnectionFailure(false)
+        .build()
 
     private sealed interface LoadResult {
         data class Success(val settings: EngineSettings) : LoadResult

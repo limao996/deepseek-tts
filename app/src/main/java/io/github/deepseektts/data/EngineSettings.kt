@@ -7,5 +7,5 @@ data class EngineSettings(
     val speechRate: Float = 1f,
     val pitch: Float = 1f,
     val dynamicColor: Boolean = false,
-    val allowThirdPartyRequests: Boolean = false,
+    val allowThirdPartyRequests: Boolean = true,
 )

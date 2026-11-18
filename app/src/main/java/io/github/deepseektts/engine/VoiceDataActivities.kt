@@ -25,7 +25,7 @@ class InstallVoiceDataActivity : Activity() {
 class SampleTextActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setResult(TextToSpeech.LANG_AVAILABLE, Intent().putExtra(TextToSpeech.Engine.EXTRA_SAMPLE_TEXT, "你好，欢迎使用鲸语。让每一段文字，自然流淌。"))
+        setResult(TextToSpeech.LANG_AVAILABLE, Intent().putExtra(TextToSpeech.Engine.EXTRA_SAMPLE_TEXT, "这是一段示例文本，用于预览当前语音引擎的朗读效果。"))
         finish()
     }
 }

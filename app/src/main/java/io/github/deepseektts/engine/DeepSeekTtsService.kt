@@ -8,6 +8,8 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import androidx.media3.common.util.UnstableApi
 import io.github.deepseektts.audio.PcmProcessor
+import io.github.deepseektts.audio.PlaybackRate
+import io.github.deepseektts.billing.UsageRecorder
 import io.github.deepseektts.data.EngineSettingsStore
 import io.github.deepseektts.network.DeepSeekStreamSession
 import io.github.deepseektts.network.TtsProtocol
@@ -21,6 +23,8 @@ class DeepSeekTtsService : TextToSpeechService() {
     private val active = AtomicReference<Control?>(null)
     private val lifecycleLock = Any()
     @Volatile private var destroyed = false
+    // Lazy: field initializers run before the service is attached to a Context.
+    private val usage by lazy { UsageRecorder(this) }
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS).retryOnConnectionFailure(false).build()
     @Volatile private var currentLanguage = arrayOf("zho", "CHN", "")
@@ -86,18 +90,20 @@ class DeepSeekTtsService : TextToSpeechService() {
         }
         try {
             if (control.cancelled) throw Stopped()
-            val settingsStore = EngineSettingsStore(this)
-            val settings = settingsStore.load()
-            EngineAccess.denyReason(request.callerUid, applicationInfo.uid, settings.allowThirdPartyRequests)?.let { throw EngineFailure(it, TextToSpeech.ERROR_SERVICE) }
+            val settings = EngineSettingsStore(this).load()
+            // getCallerUid() only exists from API 29; older platforms cannot identify the caller.
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                EngineAccess.denyReason(request.callerUid, applicationInfo.uid, settings.allowThirdPartyRequests)
+                    ?.let { throw EngineFailure(it, TextToSpeech.ERROR_SERVICE) }
+            }
             if (settings.apiKey.isBlank()) throw EngineFailure("请先打开鲸语 TTS 设置并保存 API Key", TextToSpeech.ERROR_NOT_INSTALLED_YET)
             if (request.params.getBoolean(TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS, false))
                 throw EngineFailure("此音色需要联网，不支持离线合成", TextToSpeech.ERROR_INVALID_REQUEST)
             if (onIsLanguageAvailable(request.language, request.country, request.variant) < 0)
                 throw EngineFailure("暂不支持该语言", TextToSpeech.ERROR_INVALID_REQUEST)
             val text = request.charSequenceText.toString()
+            // Only the API's own per-request limit applies; the app never caps daily usage.
             TtsProtocol.textMessage(text)
-            val quota = settingsStore.reserveDailyCharacters(TtsProtocol.billedCharacters(text))
-            if (!quota.allowed) throw EngineFailure("已达到本机每日 ${EngineSettingsStore.DAILY_CHARACTER_LIMIT} 个计费字符上限，请在配额重置后重试", TextToSpeech.ERROR_SERVICE)
             if (control.cancelled) throw Stopped()
             val session = DeepSeekStreamSession(client)
             control.attach(session)
@@ -107,7 +113,13 @@ class DeepSeekTtsService : TextToSpeechService() {
             if (callback.start(TtsProtocol.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1) != TextToSpeech.SUCCESS) throw Stopped()
             val maximum = (callback.maxBufferSize / 2) * 2
             if (maximum < 2) throw EngineFailure("系统音频缓冲区不可用", TextToSpeech.ERROR_OUTPUT)
-            processor = PcmProcessor(request.speechRate / 100f, request.pitch / 100f) { bytes ->
+            // Android reports caller rate/pitch as percentages (100 = platform default). Third-party
+            // readers usually send 100, so the values configured in this app must act as the baseline,
+            // otherwise the user's speed/pitch settings never reach third-party playback.
+            val ownCall = android.os.Build.VERSION.SDK_INT < 29 || request.callerUid == applicationInfo.uid
+            val speed = PlaybackRate.effective(request.speechRate, settings.speechRate, applyBaseline = !ownCall)
+            val pitch = PlaybackRate.effective(request.pitch, settings.pitch, applyBaseline = !ownCall)
+            processor = PcmProcessor(speed, pitch) { bytes ->
                 var offset = 0
                 while (offset < bytes.size) {
                     if (control.cancelled) throw Stopped()
@@ -134,6 +146,8 @@ class DeepSeekTtsService : TextToSpeechService() {
                 }
             }
             if (audioBytes == 0L) throw EngineFailure("服务没有返回可播放的音频，请调整文本后重试", TextToSpeech.ERROR_SYNTHESIS)
+            // Record only after the service confirmed success; failed attempts are never billed.
+            runCatching { usage.record(TtsProtocol.billedCharacters(text)) }
             processor.finish()
             if (control.cancelled) throw Stopped()
             status(EnginePhase.COMPLETED, "音频合成完成")
