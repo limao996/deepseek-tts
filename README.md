@@ -23,7 +23,7 @@ bash gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 
 Windows 若项目路径包含中文，AGP/JVM 测试可能无法加载测试类；将工程放在纯英文路径后重试测试。本次验证也使用临时盘符映射，不修改源码位置。
 
-调试 APK：app/build/outputs/apk/debug/app-debug.apk。Android Studio 可直接打开项目；SDK 路径通过 ANDROID_HOME 或本地 local.properties 配置，不提交个人路径。发布版需要自行配置签名。
+发布版 APK 与校验值见 GitHub Releases：https://github.com/limao996/deepseek-tts/releases 。本地构建调试 APK 位于 app/build/outputs/apk/debug/app-debug.apk。Android Studio 可直接打开项目；SDK 路径通过 ANDROID_HOME 或本地 local.properties 配置，不提交个人路径。发布版需要自行配置签名。
 
 ## 使用
 1. 安装调试 APK（最低 Android 8.0 / API 26）。
