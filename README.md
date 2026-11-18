@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/screenshots/home-light.png" width="88" alt="鲸语 TTS" />
+<img src="docs/icon.png" width="112" alt="鲸语 TTS" />
 
 # 鲸语 TTS
 
